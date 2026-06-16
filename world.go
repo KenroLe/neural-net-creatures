@@ -6,11 +6,13 @@ import (
 )
 
 const (
-	MaxFood       = 180
-	MaxCreatures  = 400
-	InitCreatures = 40
-	FoodPerTick   = 2 // new food items spawned each tick
-	MinPopulation = 8 // repopulate with random creatures if below this
+	MaxFood        = 80
+	MaxCreatures   = 400
+	InitCreatures  = 40
+	MinPopulation  = 8
+	ClusterEvery   = 25   // ticks between cluster spawns
+	ClusterSize    = 7    // food items per cluster
+	ClusterRadius  = 110.0
 )
 
 type Food struct {
@@ -37,35 +39,40 @@ func NewWorld() *World {
 		w.Creatures = append(w.Creatures, c)
 	}
 
-	for i := 0; i < MaxFood/2; i++ {
-		w.Foods = append(w.Foods, &Food{
-			X:     rand.Float64() * WorldWidth,
-			Y:     rand.Float64() * WorldHeight,
-			Alive: true,
-		})
+	for i := 0; i < 5; i++ {
+		w.spawnCluster()
 	}
 
 	w.BornTotal = InitCreatures
 	return w
 }
 
+func (w *World) spawnCluster() {
+	cx := rand.Float64() * WorldWidth
+	cy := rand.Float64() * WorldHeight
+	for i := 0; i < ClusterSize; i++ {
+		angle := rand.Float64() * 2 * math.Pi
+		dist := rand.Float64() * ClusterRadius
+		w.Foods = append(w.Foods, &Food{
+			X:     math.Mod(cx+math.Cos(angle)*dist+WorldWidth, WorldWidth),
+			Y:     math.Mod(cy+math.Sin(angle)*dist+WorldHeight, WorldHeight),
+			Alive: true,
+		})
+	}
+}
+
 func (w *World) Update() {
 	w.Tick++
 
-	// Spawn food up to cap.
+	// Spawn a food cluster every ClusterEvery ticks, up to cap.
 	foodAlive := 0
 	for _, f := range w.Foods {
 		if f.Alive {
 			foodAlive++
 		}
 	}
-	for i := 0; i < FoodPerTick && foodAlive < MaxFood; i++ {
-		w.Foods = append(w.Foods, &Food{
-			X:     rand.Float64() * WorldWidth,
-			Y:     rand.Float64() * WorldHeight,
-			Alive: true,
-		})
-		foodAlive++
+	if w.Tick%ClusterEvery == 0 && foodAlive < MaxFood {
+		w.spawnCluster()
 	}
 
 	alive := w.AliveCreatures()
@@ -126,6 +133,22 @@ func (w *World) Update() {
 			}
 		}
 	}
+	// Mitosis: asexual split for creatures that want it and have the energy.
+	for _, c := range alive {
+		if !c.Alive {
+			continue
+		}
+		out := c.Brain.Forward(c.sense(w.Foods, alive))
+		if c.WantsToMitosis(out) && len(alive)+len(newborns) < MaxCreatures {
+			child := Mitosis(c)
+			newborns = append(newborns, child)
+			w.BornTotal++
+			if child.Gen > w.MaxGen {
+				w.MaxGen = child.Gen
+			}
+		}
+	}
+
 	w.Creatures = append(w.Creatures, newborns...)
 
 	// Count deaths and compact dead entries periodically.

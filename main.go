@@ -11,10 +11,13 @@ import (
 )
 
 type Game struct {
-	world *World
-	// Speed multiplier: sim steps per draw frame.
+	world         *World
 	stepsPerFrame int
 	paused        bool
+	selected      *Creature
+	prevMouseLeft bool
+	prevKeyP      bool
+	camX, camY    float64
 }
 
 func NewGame() *Game {
@@ -25,16 +28,59 @@ func NewGame() *Game {
 }
 
 func (g *Game) Update() error {
-	// P toggles pause.
-	if ebiten.IsKeyPressed(ebiten.KeyP) {
+	keyP := ebiten.IsKeyPressed(ebiten.KeyP)
+	if keyP && !g.prevKeyP {
 		g.paused = !g.paused
 	}
-	// + / - adjust simulation speed.
+	g.prevKeyP = keyP
+
 	if ebiten.IsKeyPressed(ebiten.KeyEqual) {
 		g.stepsPerFrame = min(g.stepsPerFrame+1, 10)
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyMinus) {
 		g.stepsPerFrame = max(g.stepsPerFrame-1, 1)
+	}
+
+	// Camera movement.
+	const camSpeed = 6.0
+	if ebiten.IsKeyPressed(ebiten.KeyW) {
+		g.camY -= camSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyS) {
+		g.camY += camSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyA) {
+		g.camX -= camSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyD) {
+		g.camX += camSpeed
+	}
+	g.camX = math.Max(0, math.Min(g.camX, float64(WorldWidth-ViewWidth)))
+	g.camY = math.Max(0, math.Min(g.camY, float64(WorldHeight-ViewHeight)))
+
+	// Click to select a creature; click empty space to deselect.
+	mouseLeft := ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	if mouseLeft && !g.prevMouseLeft {
+		mx, my := ebiten.CursorPosition()
+		wx, wy := float64(mx)+g.camX, float64(my)+g.camY
+		g.selected = nil
+		bestDist := CreatureRadius * 3
+		for _, c := range g.world.Creatures {
+			if !c.Alive {
+				continue
+			}
+			dx := wx - c.X
+			dy := wy - c.Y
+			if d := math.Sqrt(dx*dx + dy*dy); d < bestDist {
+				bestDist = d
+				g.selected = c
+			}
+		}
+	}
+	g.prevMouseLeft = mouseLeft
+
+	if g.selected != nil && !g.selected.Alive {
+		g.selected = nil
 	}
 
 	if !g.paused {
@@ -54,7 +100,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if !f.Alive {
 			continue
 		}
-		vector.DrawFilledCircle(screen, float32(f.X), float32(f.Y), 3.5, color.RGBA{70, 210, 90, 220}, false)
+		sx, sy := float32(f.X-g.camX), float32(f.Y-g.camY)
+		if sx < -10 || sx > ViewWidth+10 || sy < -10 || sy > ViewHeight+10 {
+			continue
+		}
+		vector.DrawFilledCircle(screen, sx, sy, 3.5, color.RGBA{70, 210, 90, 220}, false)
 	}
 
 	// Draw creatures.
@@ -62,7 +112,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if !c.Alive {
 			continue
 		}
-		drawCreature(screen, c)
+		drawCreature(screen, c, g.camX, g.camY)
+	}
+
+	// Selection ring.
+	if g.selected != nil && g.selected.Alive {
+		cx := float32(g.selected.X - g.camX)
+		cy := float32(g.selected.Y - g.camY)
+		vector.StrokeCircle(screen, cx, cy, float32(CreatureRadius)+6, 2, color.RGBA{255, 240, 80, 230}, false)
 	}
 
 	// HUD.
@@ -73,7 +130,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	hud := fmt.Sprintf(
 		"Tick: %d  Creatures: %d  Food: %d  Gen: %d  Born: %d  Speed: %dx  TPS: %.0f%s\n"+
-			"[P] pause   [+/-] speed",
+			"[P] pause   [+/-] speed   [WASD] camera  cam:(%.0f,%.0f)",
 		g.world.Tick,
 		alive,
 		g.world.AliveFoodCount(),
@@ -82,12 +139,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.stepsPerFrame,
 		ebiten.ActualTPS(),
 		status,
+		g.camX, g.camY,
 	)
 	ebitenutil.DebugPrint(screen, hud)
+
+	drawNNPanel(screen, g.selected)
 }
 
-func drawCreature(screen *ebiten.Image, c *Creature) {
-	cx, cy := float32(c.X), float32(c.Y)
+func drawCreature(screen *ebiten.Image, c *Creature, camX, camY float64) {
+	cx, cy := float32(c.X-camX), float32(c.Y-camY)
+	if cx < -30 || cx > ViewWidth+30 || cy < -30 || cy > ViewHeight+30 {
+		return
+	}
 	r := float32(CreatureRadius)
 
 	energyRatio := float32(c.Energy / MaxEnergy)
@@ -123,11 +186,11 @@ func drawCreature(screen *ebiten.Image, c *Creature) {
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {
-	return WorldWidth, WorldHeight
+	return ViewWidth, ViewHeight
 }
 
 func main() {
-	ebiten.SetWindowSize(WorldWidth, WorldHeight)
+	ebiten.SetWindowSize(ViewWidth, ViewHeight)
 	ebiten.SetWindowTitle("Neural Net Creatures")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 

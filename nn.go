@@ -51,6 +51,29 @@ func (nn *NeuralNet) Forward(input []float64) []float64 {
 	return current
 }
 
+// ForwardWithActivations returns the output and every layer's activation values
+// (index 0 = input copy, index 1..n = each layer's output).
+func (nn *NeuralNet) ForwardWithActivations(input []float64) ([]float64, [][]float64) {
+	acts := make([][]float64, len(nn.Sizes))
+	inp := make([]float64, len(input))
+	copy(inp, input)
+	acts[0] = inp
+	current := input
+	for i, layer := range nn.Layers {
+		next := make([]float64, len(layer.Biases))
+		for j := range next {
+			sum := layer.Biases[j]
+			for k, v := range current {
+				sum += layer.Weights[j][k] * v
+			}
+			next[j] = math.Tanh(sum)
+		}
+		acts[i+1] = next
+		current = next
+	}
+	return current, acts
+}
+
 func (nn *NeuralNet) Clone() *NeuralNet {
 	clone := &NeuralNet{Sizes: nn.Sizes}
 	for _, layer := range nn.Layers {

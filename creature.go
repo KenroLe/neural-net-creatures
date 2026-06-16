@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	WorldWidth     = 1200
-	WorldHeight    = 800
+	WorldWidth     = 2400
+	WorldHeight    = 1600
+	ViewWidth      = 1200
+	ViewHeight     = 800
 	MaxSpeed       = 3.0
 	MaxEnergy      = 200.0
 	InitEnergy     = 100.0
@@ -19,7 +21,8 @@ const (
 	FoodEnergy     = 35.0
 	ViewRadius     = 160.0
 	CreatureRadius = 8.0
-	MaxCooldown    = 300 // ticks before a creature can reproduce again
+	MaxCooldown         = 300 // ticks before a creature can reproduce again
+	MaxMitosisCooldown  = 400 // ticks before a creature can split again
 )
 
 // Inputs to the neural net (must match NewNeuralNet sizes[0]).
@@ -38,8 +41,9 @@ const NumInputs = 10
 // Outputs (must match last layer size):
 // 0  turn rate   (tanh → −1..1)
 // 1  thrust      (tanh → −1..1, mapped to 0..1 speed)
-// 2  reproduction desire (tanh > 0.5 triggers attempt)
-const NumOutputs = 3
+// 2  sexual reproduction desire (tanh > 0.5 triggers attempt when mate nearby)
+// 3  mitosis desire (tanh > 0.5 triggers asexual split)
+const NumOutputs = 4
 
 type Creature struct {
 	X, Y          float64
@@ -49,11 +53,12 @@ type Creature struct {
 	Age           int
 	Brain         *NeuralNet
 	R, G, B       float64 // genome colour 0-1
-	ReproCooldown int
-	Alive         bool
-	Gen           int
-	// Brief glow after reproducing (ticks remaining)
-	GlowTicks int
+	ReproCooldown   int
+	MitosisCooldown int
+	Alive           bool
+	Gen             int
+	GlowTicks       int
+	LastActivations [][]float64
 }
 
 func NewCreature(x, y float64) *Creature {
@@ -147,7 +152,8 @@ func (c *Creature) Update(foods []*Food, creatures []*Creature) {
 	}
 
 	inputs := c.sense(foods, creatures)
-	out := c.Brain.Forward(inputs)
+	out, acts := c.Brain.ForwardWithActivations(inputs)
+	c.LastActivations = acts
 
 	// out[0]: turn  (−1..1)
 	// out[1]: thrust (mapped from tanh to 0..1)
@@ -169,6 +175,9 @@ func (c *Creature) Update(foods []*Food, creatures []*Creature) {
 	if c.ReproCooldown > 0 {
 		c.ReproCooldown--
 	}
+	if c.MitosisCooldown > 0 {
+		c.MitosisCooldown--
+	}
 	if c.GlowTicks > 0 {
 		c.GlowTicks--
 	}
@@ -180,6 +189,37 @@ func (c *Creature) Update(foods []*Food, creatures []*Creature) {
 
 func (c *Creature) WantsToReproduce(out []float64) bool {
 	return c.Energy >= ReproEnergy && c.ReproCooldown == 0 && out[2] > 0.5
+}
+
+func (c *Creature) WantsToMitosis(out []float64) bool {
+	return c.Energy >= ReproEnergy && c.MitosisCooldown == 0 && out[3] > 0.5
+}
+
+func Mitosis(parent *Creature) *Creature {
+	childBrain := parent.Brain.Clone()
+	childBrain.Mutate(0.1, 0.3)
+
+	mutR := (rand.Float64() - 0.5) * 0.12
+	mutG := (rand.Float64() - 0.5) * 0.12
+	mutB := (rand.Float64() - 0.5) * 0.12
+
+	childEnergy := parent.Energy / 2
+	parent.Energy = childEnergy
+	parent.MitosisCooldown = MaxMitosisCooldown
+	parent.GlowTicks = 40
+
+	return &Creature{
+		X:      parent.X + (rand.Float64()-0.5)*24,
+		Y:      parent.Y + (rand.Float64()-0.5)*24,
+		Angle:  rand.Float64() * 2 * math.Pi,
+		Energy: childEnergy,
+		Brain:  childBrain,
+		R:      clamp01(parent.R + mutR),
+		G:      clamp01(parent.G + mutG),
+		B:      clamp01(parent.B + mutB),
+		Alive:  true,
+		Gen:    parent.Gen + 1,
+	}
 }
 
 func Reproduce(a, b *Creature) *Creature {
