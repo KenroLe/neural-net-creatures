@@ -95,6 +95,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Background.
 	screen.Fill(color.RGBA{12, 12, 22, 255})
 
+	// Draw the world walls (border) relative to the camera.
+	drawWalls(screen, g.camX, g.camY)
+
 	// Draw food as small bright green dots.
 	for _, f := range g.world.Foods {
 		if !f.Alive {
@@ -144,6 +147,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	ebitenutil.DebugPrint(screen, hud)
 
 	drawNNPanel(screen, g.selected)
+}
+
+func drawWalls(screen *ebiten.Image, camX, camY float64) {
+	wt := float32(WallThickness)
+	wallCol := color.RGBA{90, 90, 130, 255}
+	// World corners in screen space.
+	left := float32(-camX)
+	top := float32(-camY)
+	right := float32(WorldWidth) - float32(camX)
+	bottom := float32(WorldHeight) - float32(camY)
+
+	// Top, bottom, left, right walls.
+	vector.DrawFilledRect(screen, left, top, right-left, wt, wallCol, false)
+	vector.DrawFilledRect(screen, left, bottom-wt, right-left, wt, wallCol, false)
+	vector.DrawFilledRect(screen, left, top, wt, bottom-top, wallCol, false)
+	vector.DrawFilledRect(screen, right-wt, top, wt, bottom-top, wallCol, false)
 }
 
 func drawCreature(screen *ebiten.Image, c *Creature, camX, camY float64) {

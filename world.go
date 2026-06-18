@@ -48,14 +48,14 @@ func NewWorld() *World {
 }
 
 func (w *World) spawnCluster() {
-	cx := rand.Float64() * WorldWidth
-	cy := rand.Float64() * WorldHeight
+	cx := WallThickness + rand.Float64()*(WorldWidth-2*WallThickness)
+	cy := WallThickness + rand.Float64()*(WorldHeight-2*WallThickness)
 	for i := 0; i < ClusterSize; i++ {
 		angle := rand.Float64() * 2 * math.Pi
 		dist := rand.Float64() * ClusterRadius
 		w.Foods = append(w.Foods, &Food{
-			X:     math.Mod(cx+math.Cos(angle)*dist+WorldWidth, WorldWidth),
-			Y:     math.Mod(cy+math.Sin(angle)*dist+WorldHeight, WorldHeight),
+			X:     math.Max(WallThickness, math.Min(cx+math.Cos(angle)*dist, WorldWidth-WallThickness)),
+			Y:     math.Max(WallThickness, math.Min(cy+math.Sin(angle)*dist, WorldHeight-WallThickness)),
 			Alive: true,
 		})
 	}

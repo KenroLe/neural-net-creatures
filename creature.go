@@ -9,6 +9,7 @@ import (
 const (
 	WorldWidth     = 2400
 	WorldHeight    = 1600
+	WallThickness  = 14.0
 	ViewWidth      = 1200
 	ViewHeight     = 800
 	MaxSpeed       = 3.0
@@ -165,9 +166,14 @@ func (c *Creature) Update(foods []*Food, creatures []*Creature) {
 	c.X += math.Cos(c.Angle) * c.Speed
 	c.Y += math.Sin(c.Angle) * c.Speed
 
-	// Wrap around the world edges.
-	c.X = math.Mod(c.X+WorldWidth, WorldWidth)
-	c.Y = math.Mod(c.Y+WorldHeight, WorldHeight)
+	// Solid walls around the world: clamp the creature so its body cannot
+	// pass through the border.
+	minX := WallThickness + CreatureRadius
+	maxX := WorldWidth - WallThickness - CreatureRadius
+	minY := WallThickness + CreatureRadius
+	maxY := WorldHeight - WallThickness - CreatureRadius
+	c.X = math.Max(minX, math.Min(c.X, maxX))
+	c.Y = math.Max(minY, math.Min(c.Y, maxY))
 
 	c.Energy -= IdleCost + c.Speed*MoveCost
 	c.Age++
